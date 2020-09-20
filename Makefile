@@ -30,38 +30,74 @@ include $(DEVKITARM)/3ds_rules
 #     - <Project name>.png
 #     - icon.png
 #     - <libctru folder>/default_icon.png
-#---------------------------------------------------------------------------------
-TARGET		:=	Test
-BUILD		:=	build
-UNIVCORE	:=	Universal-Core
-SOURCES		:=	$(CURDIR) $(UNIVCORE) source source/gui source/screens
-DATA		:=	data
-INCLUDES	:=	$(UNIVCORE) include include/gui include/screens
-GRAPHICS	:=	assets/gfx
-#GFXBUILD	:=	$(BUILD)
-APP_AUTHOR	:=	Test
-APP_DESCRIPTION := An Universal-Core example.
-ICON		:=	app/icon.png
-ROMFS		:=	romfs
-GFXBUILD	:=	$(ROMFS)/gfx
 
 #---------------------------------------------------------------------------------
 # External tools
 #---------------------------------------------------------------------------------
 ifeq ($(OS),Windows_NT)
-BANNERTOOL ?= bannertool.exe
+MAKEROM 	?= ../makerom.exe
+BANNERTOOL 	?= ../bannertool.exe
 
 else
-BANNERTOOL ?= bannertool
+MAKEROM 	?= makerom
+BANNERTOOL 	?= bannertool
 
 endif
+
+# If on a tagged commit, use the tag instead of the commit
+ifneq ($(shell echo $(shell git tag -l --points-at HEAD) | head -c 1),)
+GIT_VER := $(shell git tag -l --points-at HEAD)
+else
+GIT_VER := $(shell git rev-parse --short HEAD)
+endif
+
+#---------------------------------------------------------------------------------
+# Version number
+#---------------------------------------------------------------------------------
+ifneq ($(shell echo $(shell git describe --tags) | head -c 2 | tail -c 1),)
+VERSION_MAJOR := $(shell echo $(shell git describe --tags) | head -c 2 | tail -c 1)
+else
+VERSION_MAJOR := 0
+endif
+
+ifneq ($(shell echo $(shell git describe --tags) | head -c 4 | tail -c 1),)
+VERSION_MINOR := $(shell echo $(shell git describe --tags) | head -c 4 | tail -c 1)
+else
+VERSION_MINOR := 0
+endif
+
+ifneq ($(shell echo $(shell git describe --tags) | head -c 6 | tail -c 1),)
+VERSION_MICRO := $(shell echo $(shell git describe --tags) | head -c 6 | tail -c 1)
+else
+VERSION_MICRO := 0
+endif
+
+#---------------------------------------------------------------------------------
+TARGET		:=	Test
+BUILD		:=	build
+UNIVCORE	:= 	Universal-Core
+MUSIC		:=  music
+SOURCES		:=	 $(UNIVCORE) source source/gui source/screens source/core/management source/utils source/core/management/nand
+DATA		:=	data
+INCLUDES	:= $(UNIVCORE) include include/gui include/screens include/core/management include/utils include/core/management/nand
+GRAPHICS	:=	assets/gfx
+#GFXBUILD	:=	$(BUILD)
+ROMFS		:=	romfs
+GFXBUILD	:=	$(ROMFS)/gfx
+APP_AUTHOR	:=	Universal-Team
+APP_DESCRIPTION :=  A multiapp, JSON script-based updater for Nintendo 3DS
+ICON		:=	app/icon.png
+BNR_IMAGE	:=  app/banner.png
+BNR_AUDIO	:=	app/BannerAudio.wav
+RSF_FILE	:=	app/build-cia.rsf
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS	:=	-g -Wall -O2 -mword-relocations \
+CFLAGS	:=	-g -Wall -Wno-psabi -O2 -mword-relocations \
+			-DV_STRING=\"$(GIT_VER)\" \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
 
@@ -72,13 +108,13 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lcitro2d -lcitro3d -lctru
+LIBS	:= -lm3dia -lmpg123 -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -larchive -lbz2 -llzma -lm -lz -lcitro2d -lcitro3d -lctru -lstdc++
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(CTRULIB)
+LIBDIRS	:= $(PORTLIBS) $(CTRULIB)
 
 
 #---------------------------------------------------------------------------------
@@ -135,14 +171,12 @@ endif
 export OFILES_SOURCES 	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export OFILES_BIN	:=	$(addsuffix .o,$(BINFILES)) \
-			$(PICAFILES:.v.pica=.shbin.o) $(SHLISTFILES:.shlist=.shbin.o) \
-			$(addsuffix .o,$(T3XFILES))
+			$(PICAFILES:.v.pica=.shbin.o) $(SHLISTFILES:.shlist=.shbin.o)
 
 export OFILES := $(OFILES_BIN) $(OFILES_SOURCES)
 
 export HFILES	:=	$(PICAFILES:.v.pica=_shbin.h) $(SHLISTFILES:.shlist=_shbin.h) \
-			$(addsuffix .h,$(subst .,_,$(BINFILES))) \
-			$(GFXFILES:.t3s=.h)
+			$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -178,31 +212,31 @@ endif
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
-	$(BANNERTOOL) makesmdh -i "app/icon.png" -s "$(TARGET)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -o "app/icon.bin"
 
-$(BUILD):
-	@mkdir -p $@
-
-ifneq ($(GFXBUILD),$(BUILD))
-$(GFXBUILD):
-	@mkdir -p $@
-endif
-
-ifneq ($(DEPSDIR),$(BUILD))
-$(DEPSDIR):
-	@mkdir -p $@
-endif
-
-#---------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(GFXBUILD)
+	@rm -fr $(BUILD) $(TARGET).elf
+	@rm -fr $(OUTDIR)
+
+
+#---------------------------------------------------------------------------------
+cia: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile cia
+
+#---------------------------------------------------------------------------------
+3dsx: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile 3dsx
 
 #---------------------------------------------------------------------------------
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
-	@tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+	$(DEVKITPRO)/tools/bin/tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+
+#---------------------------------------------------------------------------------
+$(BUILD):
+	@[ -d $@ ] || mkdir -p $@
 
 #---------------------------------------------------------------------------------
 else
@@ -210,12 +244,16 @@ else
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
-
-$(OFILES_SOURCES) : $(HFILES)
+all: $(OUTPUT).cia $(OUTPUT).elf $(OUTPUT).3dsx
 
 $(OUTPUT).elf	:	$(OFILES)
 
+$(OUTPUT).cia	:	$(OUTPUT).elf $(OUTPUT).smdh
+	$(BANNERTOOL) makebanner -i "../app/banner.png" -a "../app/BannerAudio.wav" -o "../app/banner.bin"
+
+	$(BANNERTOOL) makesmdh -i "../app/icon.png" -s "$(TARGET)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -o "../app/icon.bin"
+
+	$(MAKEROM) -f cia -target t -exefslogo -o "../Test.cia" -elf "../Test.elf" -rsf "../app/build-cia.rsf" -banner "../app/banner.bin" -icon "../app/icon.bin" -logo "../app/logo.bcma.lz" -DAPP_ROMFS="$(TOPDIR)/$(ROMFS)" -major $(VERSION_MAJOR) -minor $(VERSION_MINOR) -micro $(VERSION_MICRO) -DAPP_VERSION_MAJOR="$(VERSION_MAJOR)"
 #---------------------------------------------------------------------------------
 # you need a rule like this for each extension you use as binary data
 #---------------------------------------------------------------------------------
