@@ -31,7 +31,7 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		:=	Universal-Core-Example
+TARGET		:=	Test
 BUILD		:=	build
 UNIVCORE	:=	Universal-Core
 SOURCES		:=	$(UNIVCORE) source source/gui source/screens
@@ -39,7 +39,7 @@ DATA		:=	data
 INCLUDES	:=	$(UNIVCORE) include include/gui include/screens
 GRAPHICS	:=	assets/gfx
 #GFXBUILD	:=	$(BUILD)
-APP_AUTHOR	:=	SuperSaiyajinStackie
+APP_AUTHOR	:=	Test
 APP_DESCRIPTION := An Universal-Core example.
 ICON		:=	app/icon.png
 ROMFS		:=	romfs
