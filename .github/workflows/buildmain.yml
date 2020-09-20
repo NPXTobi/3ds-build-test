@@ -50,7 +50,7 @@ jobs:
           make
           mkdir -p ~/artifacts
           cp Test.3dsx ~/artifacts
-          
+          cp Test.cia ~/artifacts
           echo ::set-output name=commit_tag::$(git describe --abbrev=0 --tags)
           echo ::set-output name=commit_hash::$(git log --format=%h -1)
           # Webhook info
