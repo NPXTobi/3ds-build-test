@@ -1,14 +1,18 @@
-name: Build Test
+name: Build Demo-Reset 
 
 on:
   push:
     branches-ignore: [translation]
+    paths-ignore:
+      - 'README.md'
   pull_request:
     branches: ["*"]
+    paths-ignore:
+      - 'README.md'
   release:
     types: [created]
 
-jobs:
+obs:
   build:
     runs-on: ubuntu-latest
     container: devkitpro/devkitarm
@@ -42,7 +46,7 @@ jobs:
 
            - name: Build
         id: build
-        run: |
+      run: |
           make
           mkdir -p ~/artifacts
           cp Test.3dsx ~/artifacts
@@ -61,8 +65,7 @@ jobs:
           name: build
 
   # Only run this for non-PR jobs.
-
-   publish_build:
+  publish_build:
     runs-on: ubuntu-latest
     name: Publish build to NPXTobi/update-builds
     if: ${{ success() && !startsWith(github.ref, 'refs/pull') }}
@@ -95,29 +98,13 @@ jobs:
             UPLOAD_URL="https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$(basename $file)"
             curl -XPOST -H "$AUTH_HEADER" -H "$CONTENT_LENGTH" -H "$CONTENT_TYPE" --upload-file "$file" "$UPLOAD_URL"
           done
-      - name: Commit and push to NPXTobi/update-builds
-        id: commit
-        run: |
-          CURRENT_DATE=$(date +"%Y%m%d-%H%M%S")
-          echo ::set-output name=current_date::$CURRENT_DATE
-       
-          git config --global user.name "TWLBot"
-          git clone --depth 1 https://${{ secrets.TWLBOT_TOKEN }}@github.com/NPXTobi/update-builds.git
-          mkdir -p update-builds/builds/Test/
-          cd update-builds/builds/Test/
-          qrencode -o Test.png https://github.com/NPXTobi/update-builds/raw/v$CURRENT_DATE/builds/Test/Test.cia
-          qrencode -o Test-release.png https://github.com/NPXTobi/Test/releases/download/$COMMIT_TAG/Test.cia
-          cp ${{ github.workspace }}/build/* .
-          git stage .
-          git commit -m "Test | $COMMIT_HASH"
-          git tag v$CURRENT_DATE
-          git push origin master v$CURRENT_DATE
-      - name: Release to NPXTobi/update-builds
+     
+      - name: Release to NPXTobi/update-builds 
         run: |
           AUTH_HEADER="Authorization: token ${{ secrets.TWLBOT_TOKEN }}"
           CONTENT_TYPE="Content-Type: application/json"
           API_URL="https://api.github.com/repos/NPXTobi/update-builds/releases"
-          RELEASE_INFO="{\"tag_name\": \"v${{ steps.commit.outputs.current_date }}\", \"name\": \"Test | $COMMIT_HASH\", \"body\": \"$AUTHOR_NAME - $COMMIT_MESSAGE\", \"prerelease\": true}"
+          RELEASE_INFO="{\"tag_name\": \"v${{ steps.commit.outputs.current_date }}\", \"name\": \"Demo-Reset| $COMMIT_HASH\", \"body\": \"$AUTHOR_NAME - $COMMIT_MESSAGE\", \"prerelease\": true}"
           RESPONSE=$(curl -XPOST -H "$AUTH_HEADER" -H "$CONTENT_TYPE" "$API_URL" -d "$RELEASE_INFO")
           ID=$(echo $RESPONSE | jq --raw-output '.id')
           for file in ${{ github.workspace }}/build/*; do
