@@ -1,119 +1,129 @@
+name: Build Test
 
-
-
-trigger:
-  branches:
-    include: ['*']
-    exclude: [leafedit-changes, cleanup]
-  tags:
-    include: ['*']
-
-name:  $[format('{0:yyyyMMdd\-HHmmss}', pipeline.startTime)]
-
-variables:
-  REPOSITORY_NAME: $(Build.Repository.Name)
-  DEVKITPRO: /opt/devkitpro
-  DEVKITARM: /opt/devkitpro/devkitARM
+on:
+  push:
+    branches-ignore: [translation]
+  pull_request:
+    branches: ["*"]
+  release:
+    types: [created]
 
 jobs:
-################################################################################
-
-  - job: build3DS
-    displayName: "Build 3DS version"
-    pool:
-      vmImage: 'Ubuntu-16.04'
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm
+    name: Build with Docker using devkitARM
+    outputs:
+      commit_tag: ${{ steps.build.outputs.commit_tag }}
+      commit_hash: ${{ steps.build.outputs.commit_hash }}
+      author_name: ${{ steps.build.outputs.author_name }}
+      committer_name: ${{ steps.build.outputs.committer_name }}
+      commit_subject: ${{ steps.build.outputs.commit_subject }}
+      commit_message: ${{ steps.build.outputs.commit_message }}
     steps:
-########################################
-    - script: |
-        sudo apt update
-        sudo apt install haveged p7zip-full
-        curl -L https://github.com/devkitPro/pacman/releases/download/devkitpro-pacman-1.0.1/devkitpro-pacman.deb -o pacman.deb
-        sudo dpkg -i pacman.deb
-        sudo dkp-pacman -Sy
-        sudo dkp-pacman -S 3ds-dev 3ds-curl 3ds-libarchive 3ds-liblzma 3ds-mbedtls 3ds-bzip2 3ds-zlib 3ds-sdl 3ds-sdl_mixer 3ds-mpg123 --noconfirm
-        curl -L https://github.com/Steveice10/bannertool/releases/download/1.1.0/bannertool.zip -o bannertool.zip
-        sudo 7z e bannertool.zip linux-x86_64/bannertool
-        sudo chmod +x bannertool
-        rm bannertool.zip
-        curl -L https://github.com/profi200/Project_CTR/releases/download/0.15/makerom_015_ctrtool.zip -o makerom_015_ctrtool.zip
-        sudo 7z e makerom_015_ctrtool.zip Linux_x86_64/makerom
-        sudo chmod +x makerom
-        rm makerom_015_ctrtool.zip
-        sudo mv makerom /opt/devkitpro/tools/bin
-        sudo mv bannertool /opt/devkitpro/tools/bin
-      displayName: 'Setup environment'
-########################################
-    - script: |
-        make
-        
-        mv 3ds/Test.3dsx $(Build.ArtifactStagingDirectory)
-      displayName: 'Build Test'
-########################################
-   
+      - name: Checkout repo
+        uses: actions/checkout@v1
+        with:
+          submodules: recursive
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install p7zip-full -y
+          curl -L https://github.com/Steveice10/bannertool/releases/download/1.1.0/bannertool.zip -o bannertool.zip
+          sudo 7z e bannertool.zip linux-x86_64/bannertool
+          sudo chmod +x bannertool
+          mv bannertool /usr/local/bin
+          rm bannertool.zip
+          curl -L https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.17/makerom-v0.17-ubuntu_x86_64.zip -o makerom-v0.17-ubuntu_x86_64.zip
+          sudo 7z e makerom-v0.17-ubuntu_x86_64.zip
+          sudo chmod +x makerom
+          mv makerom /usr/local/bin
+          rm makerom-v0.17-ubuntu_x86_64.zip
 
-    displayName: "Publish builds"
-    dependsOn:
-     
-      - build3DS
-      
-    condition: succeeded('build3DS'), not(startsWith(variables['Build.SourceBranch'], 'refs/pull')))
-    variables:
-      COMMIT_TAG: $[ dependencies.buildDS.outputs['buildDS.COMMIT_TAG'] ]
-      COMMIT_MESSAGE: $[ dependencies.buildDS.outputs['buildDS.COMMIT_MESSAGE'] ]
+           - name: Build
+        id: build
+        run: |
+          make
+          mkdir -p ~/artifacts
+          cp Test.3dsx ~/artifacts
+          
+          echo ::set-output name=commit_tag::$(git describe --abbrev=0 --tags)
+          echo ::set-output name=commit_hash::$(git log --format=%h -1)
+          # Webhook info
+          echo ::set-output name=author_name::$(git log -1 "$GITHUB_SHA" --pretty="%aN")
+          echo ::set-output name=committer_name::$(git log -1 "$GITHUB_SHA" --pretty="%cN")
+          echo ::set-output name=commit_subject::$(git log -1 "$GITHUB_SHA" --pretty="%s")
+          echo ::set-output name=commit_message::$(git log -1 "$GITHUB_SHA" --pretty="%b")
+      - name: Publish build to GH Actions
+        uses: actions/upload-artifact@v2
+        with:
+          path: ~/artifacts/*
+          name: build
 
+  # Only run this for non-PR jobs.
+
+   publish_build:
+    runs-on: ubuntu-latest
+    name: Publish build to NPXTobi/update-builds
+    if: ${{ success() && !startsWith(github.ref, 'refs/pull') }}
+    needs: build
+    env:
+      COMMIT_TAG: ${{ needs.build.outputs.commit_tag }}
+      COMMIT_HASH: ${{ needs.build.outputs.commit_hash }}
+      AUTHOR_NAME: ${{ needs.build.outputs.author_name }}
+      COMMIT_MESSAGE: ${{ needs.build.outputs.commit_message }}
+    outputs:
+      current_date: ${{ steps.commit.outputs.current_date }}
     steps:
-########################################
-      - task: DownloadBuildArtifacts@0
-        inputs:
-          downloadPath: $(Build.ArtifactStagingDirectory)
-          artifactName: 'build3DS'
-        displayName: "Retrieving artifacts from 3DS build"
-########################################
-
-      - script: |
-          sudo apt install qrencode
-          export CURRENT_DATE=$(date +"%Y%m%d-%H%M%S")
-          echo '##vso[task.setvariable variable=CURRENT_DATE]'$CURRENT_DATE
-          echo '##vso[task.setvariable variable=CURRENT_DATE;isOutput=true]'$CURRENT_DATE
-         
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install qrencode -y
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+          path: build
+      - name: Upload to ${{ github.repository }} release
+        if: ${{ startsWith(github.ref, 'refs/tags') }}
+        run: |
+          ID=$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)
+          for file in ${{ github.workspace }}/build/*; do
+            AUTH_HEADER="Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+            CONTENT_LENGTH="Content-Length: $(stat -c%s $file)"
+            CONTENT_TYPE="Content-Type: application/7z-x-compressed"
+            UPLOAD_URL="https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$(basename $file)"
+            curl -XPOST -H "$AUTH_HEADER" -H "$CONTENT_LENGTH" -H "$CONTENT_TYPE" --upload-file "$file" "$UPLOAD_URL"
+          done
+      - name: Commit and push to NPXTobi/update-builds
+        id: commit
+        run: |
+          CURRENT_DATE=$(date +"%Y%m%d-%H%M%S")
+          echo ::set-output name=current_date::$CURRENT_DATE
+       
           git config --global user.name "TWLBot"
-          git clone https://$GITHUB_TOKEN@github.com/NPXTobi/update-builds.git
-          cd update-builds/builds
-         
-          cp $(Build.ArtifactStagingDirectory)/*/* .
+          git clone --depth 1 https://${{ secrets.TWLBOT_TOKEN }}@github.com/NPXTobi/update-builds.git
+          mkdir -p update-builds/builds/Test/
+          cd update-builds/builds/Test/
+          qrencode -o Test.png https://github.com/NPXTobi/update-builds/raw/v$CURRENT_DATE/builds/Test/Test.cia
+          qrencode -o Test-release.png https://github.com/NPXTobi/Test/releases/download/$COMMIT_TAG/Test.cia
+          cp ${{ github.workspace }}/build/* .
           git stage .
-          git commit -m "Test | $(COMMIT_TAG)"
-          git push origin master
+          git commit -m "Test | $COMMIT_HASH"
           git tag v$CURRENT_DATE
-          echo '##vso[task.setvariable variable=update-builds_COMMIT]'$(git log -1 --format="%H")
-        name: commit
-        displayName: "Commit to NPXTobi/update-builds"
-########################################
-      - task: GitHubRelease@0
-        displayName: "Release to NPXTobi/update-builds"
-        inputs:
-          gitHubConnection: TWLBot
-          repositoryName: NPXTobi/update-builds
-          action: create
-          target: $(update-builds_COMMIT)
-          tagSource: 'manual'
-          tag: v$(CURRENT_DATE)
-          title: Test | $(COMMIT_TAG)
-          releaseNotesSource: input
-          releaseNotes: $(COMMIT_MESSAGE)
-          assets: '$(Build.ArtifactStagingDirectory)/*/*'
-          isPreRelease: true
-          addChangeLog: false
-########################################
-      - task: GitHubRelease@0
-        displayName: "Release to NPXTobi/Test"
-        condition: startsWith(variables['Build.SourceBranchName'], 'v')
-        inputs:
-          gitHubConnection: TWLBot
-          repositoryName: NPXTobi/Test
-          action: edit
-          target: '$(Build.SourceVersion)'
-          tag: $(Build.SourceBranchName)
-          assets: '$(Build.ArtifactStagingDirectory)/*/*'
-################################################################################
- 
+          git push origin master v$CURRENT_DATE
+      - name: Release to NPXTobi/update-builds
+        run: |
+          AUTH_HEADER="Authorization: token ${{ secrets.TWLBOT_TOKEN }}"
+          CONTENT_TYPE="Content-Type: application/json"
+          API_URL="https://api.github.com/repos/NPXTobi/update-builds/releases"
+          RELEASE_INFO="{\"tag_name\": \"v${{ steps.commit.outputs.current_date }}\", \"name\": \"Test | $COMMIT_HASH\", \"body\": \"$AUTHOR_NAME - $COMMIT_MESSAGE\", \"prerelease\": true}"
+          RESPONSE=$(curl -XPOST -H "$AUTH_HEADER" -H "$CONTENT_TYPE" "$API_URL" -d "$RELEASE_INFO")
+          ID=$(echo $RESPONSE | jq --raw-output '.id')
+          for file in ${{ github.workspace }}/build/*; do
+            AUTH_HEADER="Authorization: token ${{ secrets.TWLBOT_TOKEN }}"
+            CONTENT_LENGTH="Content-Length: $(stat -c%s $file)"
+            CONTENT_TYPE="Content-Type: application/7z-x-compressed"
+            UPLOAD_URL="https://uploads.github.com/repos/NPXTobi/update-builds/releases/$ID/assets?name=$(basename $file)"
+            curl -XPOST -H "$AUTH_HEADER" -H "$CONTENT_LENGTH" -H "$CONTENT_TYPE" --upload-file "$file" "$UPLOAD_URL"
+          done
