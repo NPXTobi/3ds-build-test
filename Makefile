@@ -34,7 +34,7 @@ include $(DEVKITARM)/3ds_rules
 TARGET		:=	Test
 BUILD		:=	build
 UNIVCORE	:=	Universal-Core
-SOURCES		:=	$(UNIVCORE) source source/gui source/screens
+SOURCES		:=	$(CURDIR) $(UNIVCORE) source source/gui source/screens
 DATA		:=	data
 INCLUDES	:=	$(UNIVCORE) include include/gui include/screens
 GRAPHICS	:=	assets/gfx
